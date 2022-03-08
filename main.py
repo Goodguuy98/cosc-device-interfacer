@@ -1,23 +1,49 @@
 #Used in clapSet.
-clpPref = {"device" : "None"}
+clpPref = "None"
+
+#The radio communicates in group 1.
+radio.set_group(1)
+
+#List of usable ports
+periphPorts = [DigitalPin.P0, DigitalPin.P1, DigitalPin.P2]
+
+#Makecode is poor at supporting dictionaries. We must instead use lists of equal lengths
+periphKeys = ["Lig", "Cur", "Doo"]
+
+#The state of each peripheral. The Microbit is not consistent at reading pins,
+#So we must record its state.
+periphState = [0, 0, 0]
+
+def on_data_received():
+    req = serial.read_until(serial.delimiters(Delimiters.NEW_LINE))
+    on_received_string(req)
 
 #A string is radio'd
 def on_received_string(req):
-
     #We take all the data we need from the formatted string
     dev = req[:3]
     mod = req[3:6]
-    par = req[:6]
-
+    par = req[6:]
+    
     #The requested function is 'switch'
     if mod == "Swi":
-        pass
+        switch(dev, par)
     
     #The requested function is 'clap'
     elif mod == "Clp":
-        pass
+        clapSet(dev, par)
 
 def switch(device : str, state):
+    global periphState
+
+    if device == "None":
+        return
+
+    #MakeCode does not play nice with dictionaries, so I'm forced to use strange methods.
+    for index in range(0, 2):
+        if periphKeys[index] == device:
+            targetPort = periphPorts[index]
+            targetIndex = index
 
     #Convert string to binary.
     if state == "On": binary = 1
@@ -27,63 +53,71 @@ def switch(device : str, state):
 
     #Check if a valid binary value was made
     if binary == 1 or binary == 0:
-
-        #Use it to change device state.
-        if device == "Lig": pins.digital_write_pin(DigitalPin.P0, binary)
-        if device == "Cur": pins.digital_write_pin(DigitalPin.P1, binary)
-        if device == "Doo": pins.digital_write_pin(DigitalPin.P2, binary)
+        #Set pin to binary value
+        pins.digital_write_pin(targetPort, binary)
+        #Store the peripherals state for future toggles (via clap)
+        periphState[targetIndex] = binary
+        #Notify website a toggle was made.
+        serial.write_line(device + "Swi" + state)
 
     #Toggle beg------------------------------------------------------------------------------------
-    #Sadly this code is convuluted as makecode is very difficult to navigate.
-    #I attempted to use a dictionary, but they don't appear to behave the same way as in python.
-    #When there's an error it's given in javascript terms, which I can't work with.
-    
+
     #Used in case of clap.
     elif state == "Toggle":
 
-        #The device is light
-        if device == "Lig":
-
-            #If the device is off, turn it on.
-            if pins.digital_read_pin(DigitalPin.P0) == 0: pins.digital_write_pin(DigitalPin.P0, 1)
-            #The device is on, turn it off.
-            else: pins.digital_write_pin(DigitalPin.P0, 0)
-        
-        #The device is curtain
-        elif device == "Cur":
-            #If the device is off, turn it on.
-            if pins.digital_read_pin(DigitalPin.P0) == 0: pins.digital_write_pin(DigitalPin.P0, 1)
-            #The device is on, turn it off.
-            else: pins.digital_write_pin(DigitalPin.P0, 0)
-
-        #The device is Door
-        elif device == "Doo":
-            #If the device is off, turn it on.
-            if pins.digital_read_pin(DigitalPin.P0) == 0: pins.digital_write_pin(DigitalPin.P0, 1)
-            #The device is on, turn it off.
-            else: pins.digital_write_pin(DigitalPin.P0, 0)
-
-        #The state is 'None' or invalid.
-        else: return
+        #If the device is off, turn it on.
+        if periphState[targetIndex] == 0:
+            pins.digital_write_pin(targetPort, 1)
+            periphState[targetIndex] = 1
+            serial.write_line(device + "SwiOn")
+            radio.send_string(device + "SwiOn")
+        #and vice versa
+        else:
+            pins.digital_write_pin(targetPort, 0)
+            periphState[targetIndex] = 0
+            serial.write_line(device + "SwiOff")
+            radio.send_string(device + "SwiOff")
 
     #Toggle end------------------------------------------------------------------------------------
 
 #For changing clap preference
 def clapSet(device, state):
     global clpPref
-
+    
     #Request turned clapPref off.
     if state == "Off":
-        clpPref["device"] = "None"
+        clpPref = "None"
     
     #Request turned clapPref on for a given device.
     elif state == "On":
-        clpPref["device"] = device
+        clpPref = device
 
-radio.on_received_string(on_received_string)
+def on_sound_loud():
+        switch(clpPref, "Toggle")
+        return
 
-radio.set_group(1)
+#Turn off via onboard
+def on_button_pressed_a():
+    switch("Lig", "Off")
+input.on_button_pressed(Button.A, on_button_pressed_a)
+#Turn on via onboard
+def on_button_pressed_b():
+    switch("Lig","On")
+input.on_button_pressed(Button.B, on_button_pressed_b)
 
 def on_forever():
-    pass
+    #Radio:bit activation-----------------------
+    radio.on_received_string(on_received_string)
+    #Clap activation---------------------------------
+    input.on_sound(DetectedSound.LOUD, on_sound_loud)
+    #Serial activation--------------------------------------------------------------
+    serial.on_data_received(serial.delimiters(Delimiters.NEW_LINE), on_data_received)
+    #Onboard activation-------------------------------------------------------------
+    if input.button_is_pressed(Button.A):
+        switch("Lig", "Off")
+    if input.button_is_pressed(Button.B):
+        switch("Lig","On")
+
 basic.forever(on_forever)
+
+basic.show_icon(IconNames.HAPPY)

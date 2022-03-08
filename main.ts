@@ -1,11 +1,47 @@
 // Used in clapSet.
-let clpPref = {
-    "device" : "None",
+let clpPref = "None"
+// The radio communicates in group 1.
+radio.setGroup(1)
+// List of usable ports
+let periphPorts = [DigitalPin.P0, DigitalPin.P1, DigitalPin.P2]
+// Makecode is poor at supporting dictionaries. We must instead use lists of equal lengths
+let periphKeys = ["Lig", "Cur", "Doo"]
+// The state of each peripheral. The Microbit is not consistent at reading pins,
+// So we must record its state.
+let periphState = [0, 0, 0]
+// A string is radio'd
+function on_received_string(req: string) {
+    // We take all the data we need from the formatted string
+    let dev = req.slice(0, 3)
+    let mod = req.slice(3, 6)
+    let par = req.slice(6)
+    // The requested function is 'switch'
+    if (mod == "Swi") {
+        switch_(dev, par)
+    } else if (mod == "Clp") {
+        // The requested function is 'clap'
+        clapSet(dev, par)
+    }
+    
 }
 
-// A string is radio'd
-function switch_(device: string, state: any) {
+function switch_(device: string, state: string) {
+    let targetPort: number;
+    let targetIndex: number;
     let binary: number;
+    
+    if (device == "None") {
+        return
+    }
+    
+    // MakeCode does not play nice with dictionaries, so I'm forced to use strange methods.
+    for (let index = 0; index < 2; index++) {
+        if (periphKeys[index] == device) {
+            targetPort = periphPorts[index]
+            targetIndex = index
+        }
+        
+    }
     // Convert string to binary.
     if (state == "On") {
         binary = 1
@@ -16,93 +52,76 @@ function switch_(device: string, state: any) {
     // Convert string to binary.
     // Check if a valid binary value was made
     if (binary == 1 || binary == 0) {
-        // Use it to change device state.
-        if (device == "Lig") {
-            pins.digitalWritePin(DigitalPin.P0, binary)
-        }
-        
-        if (device == "Cur") {
-            pins.digitalWritePin(DigitalPin.P1, binary)
-        }
-        
-        if (device == "Doo") {
-            pins.digitalWritePin(DigitalPin.P2, binary)
-        }
-        
+        // Set pin to binary value
+        pins.digitalWritePin(targetPort, binary)
+        // Store the peripherals state for future toggles (via clap)
+        periphState[targetIndex] = binary
+        // Notify website a toggle was made.
+        serial.writeLine(device + "Swi" + state)
     } else if (state == "Toggle") {
         // Toggle beg------------------------------------------------------------------------------------
-        // Sadly this code is convuluted as makecode is very difficult to navigate.
-        // I attempted to use a dictionary, but they don't appear to behave the same way as in python.
-        // When there's an error it's given in javascript terms, which I can't work with.
         // Used in case of clap.
-        // The device is light
-        if (device == "Lig") {
-            // If the device is off, turn it on.
-            if (pins.digitalReadPin(DigitalPin.P0) == 0) {
-                pins.digitalWritePin(DigitalPin.P0, 1)
-            } else {
-                pins.digitalWritePin(DigitalPin.P0, 0)
-            }
-            
-        } else if (device == "Cur") {
-            // The device is on, turn it off.
-            // The device is curtain
-            // If the device is off, turn it on.
-            if (pins.digitalReadPin(DigitalPin.P0) == 0) {
-                pins.digitalWritePin(DigitalPin.P0, 1)
-            } else {
-                pins.digitalWritePin(DigitalPin.P0, 0)
-            }
-            
-        } else if (device == "Doo") {
-            // The device is on, turn it off.
-            // The device is Door
-            // If the device is off, turn it on.
-            if (pins.digitalReadPin(DigitalPin.P0) == 0) {
-                pins.digitalWritePin(DigitalPin.P0, 1)
-            } else {
-                pins.digitalWritePin(DigitalPin.P0, 0)
-            }
-            
+        // If the device is off, turn it on.
+        if (periphState[targetIndex] == 0) {
+            pins.digitalWritePin(targetPort, 1)
+            periphState[targetIndex] = 1
+            serial.writeLine(device + "SwiOn")
+            radio.sendString(device + "SwiOn")
         } else {
-            return
+            // and vice versa
+            pins.digitalWritePin(targetPort, 0)
+            periphState[targetIndex] = 0
+            serial.writeLine(device + "SwiOff")
+            radio.sendString(device + "SwiOff")
         }
         
     }
     
 }
 
-// The device is on, turn it off.
-// The state is 'None' or invalid.
 // Toggle end------------------------------------------------------------------------------------
 // For changing clap preference
-function clapSet(device: any, state: any) {
+function clapSet(device: string, state: string) {
     
     // Request turned clapPref off.
     if (state == "Off") {
-        clpPref["device"] = "None"
+        clpPref = "None"
     } else if (state == "On") {
         // Request turned clapPref on for a given device.
-        clpPref["device"] = device
+        clpPref = device
     }
     
 }
 
-radio.onReceivedString(function on_received_string(req: string) {
-    // We take all the data we need from the formatted string
-    let dev = req.slice(0, 3)
-    let mod = req.slice(3, 6)
-    let par = req.slice(0, 6)
-    // The requested function is 'switch'
-    if (mod == "Swi") {
-        
-    } else if (mod == "Clp") {
-        // The requested function is 'clap'
-        
+// Turn off via onboard
+input.onButtonPressed(Button.A, function on_button_pressed_a() {
+    switch_("Lig", "Off")
+})
+// Turn on via onboard
+input.onButtonPressed(Button.B, function on_button_pressed_b() {
+    switch_("Lig", "On")
+})
+basic.forever(function on_forever() {
+    // Radio:bit activation-----------------------
+    radio.onReceivedString(on_received_string)
+    // Clap activation---------------------------------
+    input.onSound(DetectedSound.Loud, function on_sound_loud() {
+        switch_(clpPref, "Toggle")
+        return
+    })
+    // Serial activation--------------------------------------------------------------
+    serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function on_data_received() {
+        let req = serial.readUntil(serial.delimiters(Delimiters.NewLine))
+        on_received_string(req)
+    })
+    // Onboard activation-------------------------------------------------------------
+    if (input.buttonIsPressed(Button.A)) {
+        switch_("Lig", "Off")
+    }
+    
+    if (input.buttonIsPressed(Button.B)) {
+        switch_("Lig", "On")
     }
     
 })
-radio.setGroup(1)
-basic.forever(function on_forever() {
-    
-})
+basic.showIcon(IconNames.Happy)
