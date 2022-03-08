@@ -99,11 +99,11 @@ def on_sound_loud():
 #Turn off via onboard
 def on_button_pressed_a():
     switch("Lig", "Off")
-input.on_button_pressed(Button.A, on_button_pressed_a)
+
 #Turn on via onboard
 def on_button_pressed_b():
     switch("Lig","On")
-input.on_button_pressed(Button.B, on_button_pressed_b)
+
 
 def on_forever():
     #Radio:bit activation-----------------------
@@ -113,10 +113,8 @@ def on_forever():
     #Serial activation--------------------------------------------------------------
     serial.on_data_received(serial.delimiters(Delimiters.NEW_LINE), on_data_received)
     #Onboard activation-------------------------------------------------------------
-    if input.button_is_pressed(Button.A):
-        switch("Lig", "Off")
-    if input.button_is_pressed(Button.B):
-        switch("Lig","On")
+    input.on_button_pressed(Button.A, on_button_pressed_a)
+    input.on_button_pressed(Button.B, on_button_pressed_b)
 
 basic.forever(on_forever)
 

@@ -94,13 +94,7 @@ function clapSet(device: string, state: string) {
 }
 
 // Turn off via onboard
-input.onButtonPressed(Button.A, function on_button_pressed_a() {
-    switch_("Lig", "Off")
-})
 // Turn on via onboard
-input.onButtonPressed(Button.B, function on_button_pressed_b() {
-    switch_("Lig", "On")
-})
 basic.forever(function on_forever() {
     // Radio:bit activation-----------------------
     radio.onReceivedString(on_received_string)
@@ -115,13 +109,11 @@ basic.forever(function on_forever() {
         on_received_string(req)
     })
     // Onboard activation-------------------------------------------------------------
-    if (input.buttonIsPressed(Button.A)) {
+    input.onButtonPressed(Button.A, function on_button_pressed_a() {
         switch_("Lig", "Off")
-    }
-    
-    if (input.buttonIsPressed(Button.B)) {
+    })
+    input.onButtonPressed(Button.B, function on_button_pressed_b() {
         switch_("Lig", "On")
-    }
-    
+    })
 })
 basic.showIcon(IconNames.Happy)
